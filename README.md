@@ -14,6 +14,13 @@ This MCP server provides an intelligent middleware between Lacework and LLM prom
 
 ## Architecture
 
+### Core Architecture Layers
+- **LaceworkHandler**: CLI integration and query execution  
+- **LQLGenerator**: Natural language to LQL conversion
+- **TemplateManager**: YAML-based query template system
+- **DynamicToolRegistry**: Runtime tool generation and management
+
+### Workflow
 ```
 User: "Show me AWS EC2 instances with high risk scores"
      ↓
@@ -78,8 +85,8 @@ User: "Show me AWS EC2 instances with high risk scores"
 
 1. **Clone and install**:
    ```bash
-   git clone <this-repo>
-   cd lacework-mcp-server
+   git clone https://github.com/40docs/mcp_dynamic_lql.git
+   cd mcp_dynamic_lql
    npm install
    ```
 
@@ -104,7 +111,7 @@ Add to your MCP client (Claude Desktop, Continue, etc.):
     "lacework-dynamic": {
       "command": "node",
       "args": ["dist/server.js"],
-      "cwd": "/path/to/lacework-mcp-server"
+      "cwd": "/path/to/mcp_dynamic_lql"
     }
   }
 }
@@ -205,6 +212,20 @@ templates/
 
 ## Development
 
+### TypeScript Configuration
+- ES2022 target with ESNext modules
+- Source maps and declarations enabled  
+- Node.js 18+ required
+
+### Development Scripts
+```bash
+npm run build       # Production build
+npm run start       # Start production server
+npm run dev         # Development mode with auto-reload
+npm run test        # Run tests
+npm run clean       # Clean build artifacts
+```
+
 ### Adding Custom Templates
 
 Create YAML files in the appropriate category directory:
@@ -298,11 +319,19 @@ node dist/server.js
 
 ## Security
 
+### Security Features
 - ✅ Uses existing Lacework CLI authentication
 - ✅ No credential storage in MCP server
 - ✅ Query validation before execution
+- ✅ Command injection protection with proper escaping
+- ✅ Input sanitization and validation
+- ✅ Timeout protection for subprocess execution
 - ✅ Error message sanitization
+
+### Security Considerations  
 - ⚠️  Generated queries should be reviewed in production
+- ⚠️  Consider rate limiting for high-volume usage
+- ⚠️  Monitor resource usage in production environments
 
 ## Contributing
 
@@ -315,9 +344,10 @@ node dist/server.js
 ### Development Setup
 ```bash
 npm install
-npm run dev    # Development mode with auto-reload
-npm run build  # Production build
-npm test       # Run tests
+npm run dev     # Development mode with auto-reload
+npm run build   # Production build
+npm run test    # Run tests
+npm run clean   # Clean build artifacts
 ```
 
 ## License
