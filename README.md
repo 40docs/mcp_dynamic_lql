@@ -333,13 +333,55 @@ node dist/server.js
 - ⚠️  Consider rate limiting for high-volume usage
 - ⚠️  Monitor resource usage in production environments
 
+## GitHub Actions Integration
+
+This repository includes automated Claude Code integration through GitHub Actions:
+
+### 🤖 Claude Code Action
+- **Trigger**: `@claude` mentions in issues, PRs, or comments
+- **Capabilities**: Code assistance, debugging, feature implementation
+- **Permissions**: Read repository contents, PR details, and CI results
+- **Model**: Claude Sonnet 4 (configurable to Claude Opus 4.1)
+
+### 🔍 Claude Code Review Action  
+- **Trigger**: Automatically on pull request creation and updates
+- **Focus Areas**:
+  - Code quality and best practices
+  - Potential bugs and security concerns
+  - Performance considerations
+  - Test coverage assessment
+- **Output**: Constructive feedback as PR comments
+
+### Usage Examples
+
+**Interactive assistance in issues/PRs:**
+```
+@claude help me implement natural language query caching
+@claude review this LQL generator implementation
+@claude fix the authentication error in the CLI handler
+```
+
+**Automatic PR reviews:**
+- Reviews run automatically on every PR
+- Provides detailed feedback on code changes
+- Focuses on TypeScript best practices and security
+- Includes performance and maintainability suggestions
+
+### Configuration
+
+Both actions use the `CLAUDE_CODE_OAUTH_TOKEN` secret for authentication. The workflows are configured with:
+- Read access to repository contents and pull requests
+- Optional CI results reading for enhanced context
+- Customizable model selection and permissions
+- File-type specific review guidelines
+
 ## Contributing
 
 1. Fork the repository
 2. Create feature branch: `git checkout -b feature/my-feature`
 3. Add tests for new functionality
 4. Update documentation
-5. Submit pull request
+5. Submit pull request (automatic Claude review will be triggered)
 
 ### Development Setup
 ```bash
