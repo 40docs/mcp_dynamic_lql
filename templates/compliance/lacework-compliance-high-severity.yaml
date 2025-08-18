@@ -1,0 +1,17 @@
+name: lacework-compliance-high-severity
+description: Critical and high severity compliance violations
+category: compliance
+query: |-
+  SELECT *
+  FROM ComplianceEvaluationDetails
+  WHERE STATUS = 'fail'
+    AND SEVERITY IN ('critical', 'high')
+  ORDER BY SEVERITY DESC, EVAL_TIME DESC
+  LIMIT 100
+parameters:
+  status: fail
+  severity: critical,high
+tags:
+  - compliance
+  - high-severity
+  - critical

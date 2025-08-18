@@ -1,0 +1,19 @@
+name: lacework-compliance-cis-failures
+description: Find all CIS benchmark compliance failures
+category: compliance
+query: |-
+  SELECT *
+  FROM ComplianceEvaluationDetails
+  WHERE STATUS = 'fail'
+    AND EVAL_TYPE LIKE '%CIS%'
+  ORDER BY SEVERITY DESC, EVAL_TIME DESC
+  LIMIT 100
+parameters:
+  status: fail
+  benchmark: CIS
+  severity: high
+tags:
+  - compliance
+  - cis
+  - benchmark
+  - failures

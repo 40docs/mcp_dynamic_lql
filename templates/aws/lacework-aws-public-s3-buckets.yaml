@@ -1,0 +1,19 @@
+name: lacework-aws-public-s3-buckets
+description: Identify publicly accessible S3 buckets
+category: aws
+query: |-
+  SELECT *
+  FROM CloudTrailRawEvents  
+  WHERE EVENT_NAME IN ('PutBucketPolicy', 'PutBucketAcl')
+    AND JSON_EXTRACT(REQUEST_PARAMETERS, '$.bucketPolicy') LIKE '%"Principal":"*"%'
+  ORDER BY EVENT_TIME DESC
+  LIMIT 100
+parameters:
+  cloud_provider: aws
+  resource_type: s3
+  public_access: true
+tags:
+  - aws
+  - s3
+  - public-access
+  - security

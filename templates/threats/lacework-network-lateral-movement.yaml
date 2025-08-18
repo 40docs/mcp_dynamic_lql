@@ -1,0 +1,19 @@
+name: lacework-network-lateral-movement
+description: Detect potential lateral movement activities
+category: threats
+query: |-
+  SELECT *
+  FROM NetworkActivity
+  WHERE PROTOCOL IN ('SSH', 'RDP', 'SMB')
+    AND ANOMALY_SCORE > 0.8
+  ORDER BY ANOMALY_SCORE DESC, EVENT_TIME DESC
+  LIMIT 100
+parameters:
+  activity_type: network
+  anomaly_threshold: 0.8
+  protocols: SSH,RDP,SMB
+tags:
+  - network
+  - lateral-movement
+  - anomaly
+  - threats

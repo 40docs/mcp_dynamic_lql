@@ -1,0 +1,19 @@
+name: lacework-user-suspicious-logins
+description: Suspicious user login activities
+category: threats
+query: |-
+  SELECT *
+  FROM UserActivity
+  WHERE ACTION = 'login'
+    AND (SOURCE_IP NOT IN (SELECT IP FROM TrustedIPs) 
+         OR LOGIN_TIME NOT BETWEEN '08:00:00' AND '18:00:00')
+  ORDER BY EVENT_TIME DESC
+  LIMIT 100
+parameters:
+  activity_type: login
+  anomaly_type: suspicious
+tags:
+  - users
+  - login
+  - suspicious
+  - authentication

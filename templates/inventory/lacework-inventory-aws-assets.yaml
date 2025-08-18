@@ -1,0 +1,19 @@
+name: lacework-inventory-aws-assets
+description: Complete inventory of AWS assets
+category: inventory
+query: |-
+  SELECT DISTINCT EVENT_NAME, AWS_REGION, COUNT(*) as COUNT
+  FROM CloudTrailRawEvents
+  WHERE EVENT_TIME >= NOW() - INTERVAL '7' DAY
+  GROUP BY EVENT_NAME, AWS_REGION
+  ORDER BY COUNT DESC
+  LIMIT 100
+parameters:
+  cloud_provider: aws
+  time_range: 7d
+  group_by: resource_type,region
+tags:
+  - inventory
+  - aws
+  - assets
+  - summary

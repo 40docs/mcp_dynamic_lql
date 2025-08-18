@@ -1,0 +1,17 @@
+name: lacework-container-critical-vulns
+description: Critical vulnerabilities in container images
+category: containers
+query: |-
+  SELECT *
+  FROM ContainerVulnDetails
+  WHERE SEVERITY = 'critical'
+  ORDER BY CVE_SCORE DESC, EVAL_TIME DESC
+  LIMIT 100
+parameters:
+  severity: critical
+  resource_type: container
+tags:
+  - containers
+  - vulnerabilities
+  - critical
+  - cve

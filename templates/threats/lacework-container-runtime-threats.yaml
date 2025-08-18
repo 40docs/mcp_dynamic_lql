@@ -1,0 +1,19 @@
+name: lacework-container-runtime-threats
+description: Runtime threats detected in containers
+category: threats
+query: |-
+  SELECT *
+  FROM KubernetesActivity
+  WHERE ACTION = 'threat_detected'
+    AND SEVERITY IN ('high', 'critical')
+  ORDER BY EVENT_TIME DESC
+  LIMIT 100
+parameters:
+  activity_type: threat
+  severity: high,critical
+  platform: kubernetes
+tags:
+  - containers
+  - kubernetes
+  - runtime
+  - threats

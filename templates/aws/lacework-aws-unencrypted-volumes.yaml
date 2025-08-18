@@ -1,0 +1,23 @@
+name: lacework-aws-unencrypted-volumes
+description: Find AWS EBS volumes that are not encrypted
+category: aws
+query: |-
+  SELECT *
+  FROM CloudTrailRawEvents
+  WHERE EVENT_NAME = 'CreateVolume'
+    AND JSON_EXTRACT(REQUEST_PARAMETERS, '$.encrypted') = 'false'
+  ORDER BY EVENT_TIME DESC
+  LIMIT 100
+parameters:
+  cloud_provider: aws
+  resource_type: ebs
+  encrypted: false
+tags:
+  - aws
+  - encryption
+  - ebs
+  - compliance
+examples:
+  - description: Find unencrypted volumes in us-east-1
+    parameters:
+      region: us-east-1
