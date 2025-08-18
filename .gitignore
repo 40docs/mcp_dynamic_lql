@@ -8,6 +8,8 @@ yarn-error.log*
 dist/
 build/
 *.tsbuildinfo
+*.js.map
+*.d.ts.map
 
 # Environment variables
 .env
@@ -41,6 +43,14 @@ pids/
 *.pid
 *.seed
 *.pid.lock
+
+# Temporary folders
+tmp/
+temp/
+
+# Cache directories
+.cache/
+.parcel-cache/
 
 # Coverage directory used by tools like istanbul
 coverage/
@@ -82,3 +92,13 @@ mcp-server.log
 templates/custom/sensitive-*
 templates/custom/*-prod*
 templates/custom/*-production*
+
+# Additional Node.js patterns
+*.orig
+.nyc_output/
+lib-cov/
+.grunt/
+.lock-wscript
+.wafpickle-N
+.node_repl_history
+*.gz

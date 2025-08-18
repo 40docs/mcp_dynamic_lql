@@ -94,13 +94,24 @@ export class LaceworkHandler {
     const config: any = {};
     const lines = configOutput.split('\n');
     
+    // Look for the table format output from "lacework configure list"
     for (const line of lines) {
-      if (line.includes('Account:')) {
-        config.account = line.split(':')[1]?.trim();
-        config.apiUrl = `https://${config.account}.lacework.net`;
+      // Skip header lines and separator lines
+      if (line.includes('PROFILE') || line.includes('---') || line.trim() === '') {
+        continue;
       }
-      if (line.includes('Profile:')) {
-        config.profile = line.split(':')[1]?.trim();
+      
+      // Parse the table row - look for active profile (marked with >)
+      if (line.includes('>')) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 3) {
+          // Format: > default   partner-demo   ...
+          config.profile = parts[1]; // "default"
+          config.account = parts[2]; // "partner-demo"
+          if (config.account && config.account !== '') {
+            config.apiUrl = `https://${config.account}.lacework.net`;
+          }
+        }
       }
     }
     

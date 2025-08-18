@@ -82,17 +82,18 @@ class LaceworkMCPServer {
       }, null, 2));
       
       try {
-        const response = {
-          protocolVersion: "2025-08-18",
-          capabilities: {
-            tools: {},
-            logging: {}
-          },
-          serverInfo: {
-            name: "lacework-mcp-server", 
-            version: "1.0.0"
-          }
-        };
+          const clientVersion = request.params.protocolVersion;
+          const response = {
+            protocolVersion: clientVersion,
+            capabilities: {
+              tools: {},
+              logging: {}
+            },
+            serverInfo: {
+              name: "lacework-mcp-server",
+              version: "1.0.0"
+            }
+          };
         
         console.error('📤 Sending initialize response:', JSON.stringify(response, null, 2));
         console.error('✅ Initialize handshake completed successfully');
