@@ -109,10 +109,10 @@ export class QueryBuilder {
     // Build a sample query to discover fields
     const query = `{
   source {
-    ${request.source}
+    ${request.source} r
   }
   return distinct {
-    *
+    r.RESOURCE_REGION
   }
 }`;
 
@@ -133,10 +133,10 @@ export class QueryBuilder {
     // Build a query to explore distinct values in a field
     const query = `{
   source {
-    ${request.source}
+    ${request.source} r
   }
   return distinct {
-    ${request.field}
+    r.${request.field}
   }
 }`;
 
@@ -160,8 +160,8 @@ export class QueryBuilder {
   }): string {
     const { dataSource, sourceInfo, request } = params;
 
-    // Start building the query
-    let query = `{\n  source {\n    ${dataSource}\n  }`;
+    // Start building the query in the correct LQL format with source block and alias
+    let query = `{\n  source {\n    ${dataSource} r\n  }`;
 
     // Add filters if provided
     if (request.filters && Object.keys(request.filters).length > 0) {
@@ -174,11 +174,6 @@ export class QueryBuilder {
     // Add return fields
     const returnFields = this.determineReturnFields(request.fields, sourceInfo);
     query += `\n  return distinct {\n    ${returnFields.join(',\n    ')}\n  }`;
-
-    // Add limit if specified
-    if (request.limit) {
-      query += `\n  limit ${request.limit}`;
-    }
 
     query += '\n}';
 
@@ -194,19 +189,29 @@ export class QueryBuilder {
       // Map filter key to actual field name
       const fieldName = this.mapFilterToField(key, sourceInfo);
       
-      if (Array.isArray(value)) {
+      // Handle special "not" filters
+      if (key.endsWith('_not')) {
+        const baseFieldName = this.mapFilterToField(key.replace('_not', ''), sourceInfo);
+        if (Array.isArray(value)) {
+          // Handle array values with AND NOT - each value needs its own NOT condition
+          const notConditions = value.map(v => `not r.${baseFieldName} = '${v}'`).join('\n    and ');
+          conditions.push(notConditions);
+        } else {
+          conditions.push(`not r.${baseFieldName} = '${value}'`);
+        }
+      } else if (Array.isArray(value)) {
         // Handle array values with OR
-        const orConditions = value.map(v => `${fieldName} = '${v}'`).join(' or ');
+        const orConditions = value.map(v => `r.${fieldName} = '${v}'`).join(' or ');
         conditions.push(`(${orConditions})`);
       } else if (typeof value === 'string' && value.includes('*')) {
         // Handle wildcards
-        conditions.push(`${fieldName} like '${value.replace(/\*/g, '%')}'`);
+        conditions.push(`r.${fieldName} like '${value.replace(/\*/g, '%')}'`);
       } else if (typeof value === 'string' && (value.startsWith('>=') || value.startsWith('<='))) {
         // Handle comparison operators
-        conditions.push(`${fieldName} ${value}`);
+        conditions.push(`r.${fieldName} ${value}`);
       } else {
         // Handle exact match
-        conditions.push(`${fieldName} = '${value}'`);
+        conditions.push(`r.${fieldName} = '${value}'`);
       }
     }
 
@@ -233,6 +238,7 @@ export class QueryBuilder {
     const commonMappings: Record<string, string> = {
       'region': 'RESOURCE_REGION',
       'account': 'ACCOUNT_ID',
+      'subscription': 'SUBSCRIPTION_ID',
       'time': 'EVENT_TIME',
       'user': 'USER_NAME',
       'error': 'ERROR_CODE',
@@ -240,7 +246,8 @@ export class QueryBuilder {
       'status': 'STATUS',
       'id': 'RESOURCE_ID',
       'name': 'RESOURCE_NAME',
-      'type': 'RESOURCE_TYPE'
+      'type': 'RESOURCE_TYPE',
+      'resource_group': 'RESOURCE_GROUP_NAME'
     };
 
     return commonMappings[filterKey.toLowerCase()] || filterKey.toUpperCase();

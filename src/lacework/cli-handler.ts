@@ -129,14 +129,29 @@ export class LaceworkHandler {
   }
 
   private parseDataSources(output: string): string[] {
-    const lines = output.split('\n').filter(line => line.trim());
+    const lines = output.split('\n');
     const sources: string[] = [];
     
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.includes('Available') && !trimmed.includes('Sources:')) {
-        sources.push(trimmed);
+      
+      // Skip empty lines, headers, and separators
+      if (
+        !trimmed ||                           // Empty lines
+        trimmed === 'DATASOURCE' ||          // Header
+        trimmed.includes('---')              // Separator lines (dashes)
+      ) {
+        continue;
       }
+      
+      // Check if this looks like a data source name (starts with specific patterns)
+      if (trimmed.startsWith('LW_') || trimmed === 'CloudTrailRawEvents') {
+        sources.push(trimmed);
+        continue;
+      }
+      
+      // Skip description lines (they don't start with LW_ or CloudTrail)
+      // These are the lines that describe what each data source contains
     }
     
     return sources;

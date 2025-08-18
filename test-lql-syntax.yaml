@@ -1,0 +1,10 @@
+queryId: test_not_syntax
+queryText: |-
+  CloudTrailRawEvents {
+    filter {
+      EVENT_NAME not in ('CreateInstance', 'TerminateInstance')
+    }
+    return distinct {
+      EVENT_NAME
+    }
+  }

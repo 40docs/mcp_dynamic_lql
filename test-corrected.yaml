@@ -1,0 +1,10 @@
+queryId: test_corrected
+queryText: |-
+  LW_CFG_AZURE_COMPUTE_VIRTUALMACHINES {
+    filter {
+      not RESOURCE_REGION = 'canadacentral'
+    }
+    return distinct {
+      RESOURCE_REGION
+    }
+  }

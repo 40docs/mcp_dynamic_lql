@@ -112,13 +112,13 @@ export class DataSourceExplorer {
 
   async discoverFields(sourceName: string): Promise<FieldInfo[]> {
     try {
-      // Build a sample query to discover schema
+      // Build a sample query to discover schema - use the correct LQL format
       const sampleQuery = `{
   source {
-    ${sourceName}
+    ${sourceName} r
   }
   return distinct {
-    *
+    r.RESOURCE_REGION
   }
 }`;
 
@@ -447,7 +447,11 @@ export class DataSourceExplorer {
         { name: 'RESOURCE_REGION', type: 'string', description: 'Azure region' },
         { name: 'SUBSCRIPTION_ID', type: 'string', description: 'Azure subscription ID' },
         { name: 'RESOURCE_CONFIG', type: 'object', description: 'VM configuration' },
-        { name: 'RESOURCE_GROUP', type: 'string', description: 'Azure resource group' }
+        { name: 'RESOURCE_GROUP_NAME', type: 'string', description: 'Azure resource group' },
+        { name: 'ACCOUNT_ID', type: 'string', description: 'Account identifier' },
+        { name: 'RESOURCE_TYPE', type: 'string', description: 'Resource type' },
+        { name: 'URN', type: 'string', description: 'Unique resource identifier' },
+        { name: 'API_KEY', type: 'string', description: 'API key reference' }
       ],
       'CloudTrailRawEvents': [
         { name: 'EVENT_TIME', type: 'timestamp', description: 'Event timestamp' },

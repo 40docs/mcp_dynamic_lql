@@ -311,8 +311,8 @@ export class LQLGenerator {
     // Choose the data source
     const source = dataSource?.lqlSource || this.inferDataSourceFromQuery(originalQuery);
     
-    // Start building LQL format query with braces
-    let query = `{\n  source {\n    ${source}\n  }`;
+    // Start building LQL format query
+    let query = `{\n  source {\n    ${source} r\n  }`;
     
     // Build filter conditions
     const filterConditions: string[] = [];
@@ -326,17 +326,17 @@ export class LQLGenerator {
           // Handle comparison operators
           const operator = value.substring(0, 2);
           const numValue = value.substring(2).trim();
-          filterConditions.push(`${fieldName} ${operator} ${numValue}`);
+          filterConditions.push(`r.${fieldName} ${operator} ${numValue}`);
         } else if (value === 'true' || value === 'false') {
           // Handle boolean values
-          filterConditions.push(`${fieldName} = ${value}`);
+          filterConditions.push(`r.${fieldName} = ${value}`);
         } else if (value.includes(',')) {
           // Handle multiple values - LQL uses OR syntax
-          const values = value.split(',').map((v: string) => `${fieldName} = '${v.trim()}'`).join(' or ');
+          const values = value.split(',').map((v: string) => `r.${fieldName} = '${v.trim()}'`).join(' or ');
           filterConditions.push(`(${values})`);
         } else {
           // Handle single string values
-          filterConditions.push(`${fieldName} = '${value}'`);
+          filterConditions.push(`r.${fieldName} = '${value}'`);
         }
       }
     }
@@ -345,14 +345,14 @@ export class LQLGenerator {
     if (originalQuery.toLowerCase().includes('fail') || originalQuery.toLowerCase().includes('failed')) {
       // For CloudTrail, look for failed events
       if (source === 'CloudTrailRawEvents') {
-        filterConditions.push("ERROR_CODE is not null");
+        filterConditions.push("r.ERROR_CODE is not null");
       }
     }
     
     if (originalQuery.toLowerCase().includes('critical')) {
       // Add critical event filters where applicable
       if (source === 'CloudTrailRawEvents') {
-        filterConditions.push("(ERROR_CODE is not null or EVENT_NAME like '%Delete%' or EVENT_NAME like '%Terminate%')");
+        filterConditions.push("(r.ERROR_CODE is not null or r.EVENT_NAME like '%Delete%' or r.EVENT_NAME like '%Terminate%')");
       }
     }
 

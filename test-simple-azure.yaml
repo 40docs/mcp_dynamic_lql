@@ -1,0 +1,7 @@
+queryId: test_simple_azure
+queryText: |-
+  LW_CFG_AZURE_COMPUTE_VIRTUALMACHINES {
+    return distinct {
+      RESOURCE_REGION
+    }
+  }
