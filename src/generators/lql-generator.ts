@@ -33,23 +33,23 @@ export class LQLGenerator {
     // AWS Data Sources
     this.dataSources.set('aws-ec2', {
       keywords: ['ec2', 'instance', 'instances', 'virtual machine', 'vm'],
-      lqlSource: 'CloudTrailRawEvents',
-      commonFields: ['EVENT_NAME', 'AWS_REGION', 'SOURCE_IP_ADDRESS', 'USER_NAME'],
-      description: 'AWS EC2 instances and events'
+      lqlSource: 'LW_CFG_AWS_EC2_INSTANCES',
+      commonFields: ['RESOURCE_ID', 'RESOURCE_REGION', 'ACCOUNT_ID', 'RESOURCE_CONFIG', 'URN'],
+      description: 'AWS EC2 instances configuration'
     });
 
     this.dataSources.set('aws-s3', {
       keywords: ['s3', 'bucket', 'storage', 'object storage'],
-      lqlSource: 'CloudTrailRawEvents',
-      commonFields: ['EVENT_NAME', 'AWS_REGION', 'BUCKET_NAME', 'OBJECT_KEY'],
-      description: 'AWS S3 buckets and objects'
+      lqlSource: 'LW_CFG_AWS_S3',
+      commonFields: ['RESOURCE_ID', 'RESOURCE_REGION', 'ACCOUNT_ID', 'RESOURCE_CONFIG', 'URN'],
+      description: 'AWS S3 buckets configuration'
     });
 
-    this.dataSources.set('aws-compliance', {
-      keywords: ['compliance', 'cis', 'benchmark', 'policy', 'violation'],
-      lqlSource: 'ComplianceEvaluationDetails',
-      commonFields: ['EVAL_TYPE', 'STATUS', 'SEVERITY', 'RESOURCE_ID'],
-      description: 'AWS compliance evaluations'
+    this.dataSources.set('aws-cloudtrail', {
+      keywords: ['cloudtrail', 'events', 'api calls', 'audit log'],
+      lqlSource: 'CloudTrailRawEvents',
+      commonFields: ['INSERT_ID', 'EVENT_TIME', 'EVENT_NAME', 'EVENT_SOURCE', 'ERROR_CODE'],
+      description: 'AWS CloudTrail activity events'
     });
 
     // Container Data Sources
@@ -215,15 +215,10 @@ export class LQLGenerator {
       filters.severity = 'high';
     }
 
-    // Cloud provider filters
-    if (query.includes('aws')) {
-      filters.cloud_provider = 'aws';
-    }
-    if (query.includes('gcp') || query.includes('google cloud')) {
-      filters.cloud_provider = 'gcp';
-    }
-    if (query.includes('azure')) {
-      filters.cloud_provider = 'azure';
+    // Region filters
+    const regionMatch = query.match(/(?:region|in)\s+([a-z]{2}-[a-z]+-\d)/);
+    if (regionMatch) {
+      filters.region = regionMatch[1];
     }
 
     // Resource type filters
@@ -294,11 +289,11 @@ export class LQLGenerator {
     // Choose the data source
     const source = dataSource?.lqlSource || this.inferDataSourceFromQuery(originalQuery);
     
-    // Start building the query
-    let query = `SELECT *\nFROM ${source}`;
+    // Start building LQL format query with braces
+    let query = `{\n  source {\n    ${source}\n  }`;
     
-    // Build WHERE clause
-    const whereConditions: string[] = [];
+    // Build filter conditions
+    const filterConditions: string[] = [];
     
     // Add filter conditions
     Object.entries(filters).forEach(([key, value]) => {
@@ -307,72 +302,140 @@ export class LQLGenerator {
           // Handle comparison operators
           const operator = value.substring(0, 2);
           const numValue = value.substring(2).trim();
-          whereConditions.push(`${this.mapFieldName(key, source)} ${operator} ${numValue}`);
+          filterConditions.push(`${this.mapFieldName(key, source)} ${operator} ${numValue}`);
         } else if (value === 'true' || value === 'false') {
           // Handle boolean values
-          whereConditions.push(`${this.mapFieldName(key, source)} = ${value}`);
+          filterConditions.push(`${this.mapFieldName(key, source)} = ${value}`);
         } else if (value.includes(',')) {
-          // Handle multiple values
-          const values = value.split(',').map((v: string) => `'${v.trim()}'`).join(', ');
-          whereConditions.push(`${this.mapFieldName(key, source)} IN (${values})`);
+          // Handle multiple values - LQL uses OR syntax
+          const values = value.split(',').map((v: string) => `${this.mapFieldName(key, source)} = '${v.trim()}'`).join(' or ');
+          filterConditions.push(`(${values})`);
         } else {
           // Handle single string values
-          whereConditions.push(`${this.mapFieldName(key, source)} = '${value}'`);
+          filterConditions.push(`${this.mapFieldName(key, source)} = '${value}'`);
         }
       }
     });
 
     // Add query-specific conditions based on keywords
-    if (originalQuery.toLowerCase().includes('fail') && source === 'ComplianceEvaluationDetails') {
-      whereConditions.push("STATUS = 'fail'");
+    if (originalQuery.toLowerCase().includes('fail') || originalQuery.toLowerCase().includes('failed')) {
+      // For CloudTrail, look for failed events
+      if (source === 'CloudTrailRawEvents') {
+        filterConditions.push("ERROR_CODE is not null");
+      }
     }
     
-    if (originalQuery.toLowerCase().includes('critical') && source.includes('Vuln')) {
-      whereConditions.push("SEVERITY = 'critical'");
+    if (originalQuery.toLowerCase().includes('critical')) {
+      // Add critical event filters where applicable
+      if (source === 'CloudTrailRawEvents') {
+        filterConditions.push("(ERROR_CODE is not null or EVENT_NAME like '%Delete%' or EVENT_NAME like '%Terminate%')");
+      }
     }
 
-    // Add WHERE clause if we have conditions
-    if (whereConditions.length > 0) {
-      query += `\nWHERE ${whereConditions.join('\n  AND ')}`;
+    // Add filter block if we have conditions
+    if (filterConditions.length > 0) {
+      query += `\n  filter {\n    ${filterConditions.join('\n    and ')}\n  }`;
     }
 
-    // Add ORDER BY for better results
-    if (source.includes('Vuln') || source.includes('Compliance')) {
-      query += `\nORDER BY SEVERITY DESC`;
-    } else if (source === 'CloudTrailRawEvents') {
-      query += `\nORDER BY EVENT_TIME DESC`;
-    }
-
-    // Add LIMIT
-    query += `\nLIMIT 100`;
+    // Add return block - LQL requires explicit field names
+    const returnFields = this.getReturnFields(source, dataSource);
+    query += `\n  return distinct {\n    ${returnFields.join(',\n    ')}\n  }\n}`;
 
     return query;
+  }
+
+  private getReturnFields(source: string, dataSource: DataSourceMapping | null): string[] {
+    // Return common fields for the data source, or default fields based on source type
+    if (dataSource && dataSource.commonFields.length > 0) {
+      return dataSource.commonFields;
+    }
+
+    // Default fields based on data source type
+    switch (source) {
+      case 'CloudTrailRawEvents':
+        return [
+          'INSERT_ID',
+          'INSERT_TIME', 
+          'EVENT_TIME',
+          'EVENT_NAME',
+          'EVENT_SOURCE',
+          'ERROR_CODE',
+          'EVENT'
+        ];
+      case 'LW_CFG_AWS_EC2_INSTANCES':
+        return [
+          'RESOURCE_ID',
+          'RESOURCE_REGION',
+          'ACCOUNT_ID',
+          'RESOURCE_TYPE',
+          'RESOURCE_CONFIG',
+          'URN',
+          'API_KEY'
+        ];
+      case 'LW_CFG_AWS_S3':
+        return [
+          'RESOURCE_ID',
+          'RESOURCE_REGION',
+          'ACCOUNT_ID',
+          'RESOURCE_TYPE',
+          'RESOURCE_CONFIG',
+          'URN',
+          'API_KEY'
+        ];
+      case 'ContainerVulnDetails':
+        return [
+          'IMAGE_DIGEST',
+          'SEVERITY',
+          'CVE_ID', 
+          'NAMESPACE',
+          'VULNERABILITY_ID',
+          'ASSESSMENT_RUN_ID'
+        ];
+      case 'LW_ACT_K8S_AUDIT':
+        return [
+          'CLUSTER_NAME',
+          'NAMESPACE',
+          'RESOURCE_TYPE',
+          'ACTION',
+          'EVENT_TIME'
+        ];
+      default:
+        // Generic fallback for CloudTrail
+        return [
+          'INSERT_ID',
+          'INSERT_TIME',
+          'EVENT_TIME',
+          'EVENT_NAME',
+          'EVENT_SOURCE'
+        ];
+    }
   }
 
   private inferDataSourceFromQuery(query: string): string {
     const lowerQuery = query.toLowerCase();
     
     if (lowerQuery.includes('compliance') || lowerQuery.includes('cis') || lowerQuery.includes('benchmark')) {
-      return 'ComplianceEvaluationDetails';
+      // Use CloudTrail as fallback since ComplianceEvaluationDetails may not be available
+      return 'CloudTrailRawEvents';
     }
     
     if (lowerQuery.includes('vulnerabilit') || lowerQuery.includes('cve')) {
       if (lowerQuery.includes('container')) {
         return 'ContainerVulnDetails';
       }
-      return 'VulnDetails';
+      return 'CloudTrailRawEvents'; // Fallback to CloudTrail if VulnDetails not available
     }
     
     if (lowerQuery.includes('kubernetes') || lowerQuery.includes('k8s')) {
-      return 'KubernetesActivity';
+      return 'LW_ACT_K8S_AUDIT'; // Use actual K8s audit data source
     }
     
     if (lowerQuery.includes('network') || lowerQuery.includes('connection')) {
-      return 'NetworkActivity';
+      return 'CloudTrailRawEvents'; // Fallback to CloudTrail
     }
     
     if (lowerQuery.includes('user') || lowerQuery.includes('login') || lowerQuery.includes('auth')) {
-      return 'UserActivity';
+      return 'CloudTrailRawEvents'; // Use CloudTrail for authentication events
     }
     
     // Default to CloudTrail for AWS-related queries
@@ -383,18 +446,22 @@ export class LQLGenerator {
     // Map common filter keys to actual LQL field names based on data source
     const fieldMappings: Record<string, Record<string, string>> = {
       CloudTrailRawEvents: {
-        cloud_provider: 'AWS_REGION',
         resource_type: 'EVENT_NAME',
-        severity: 'ERROR_CODE',
-        risk_score: 'RISK_SCORE',
-        status: 'STATUS',
-        user_name: 'USER_NAME',
+        status: 'ERROR_CODE',
+        event_source: 'EVENT_SOURCE',
+        user_name: 'EVENT', // User info is in the EVENT JSON field
       },
-      ComplianceEvaluationDetails: {
-        severity: 'SEVERITY',
-        status: 'STATUS',
-        resource_type: 'EVAL_TYPE',
-        risk_score: 'RISK_SCORE',
+      LW_CFG_AWS_EC2_INSTANCES: {
+        region: 'RESOURCE_REGION',
+        account: 'ACCOUNT_ID',
+        resource_type: 'RESOURCE_TYPE',
+        status: 'RESOURCE_CONFIG',
+      },
+      LW_CFG_AWS_S3: {
+        region: 'RESOURCE_REGION',
+        account: 'ACCOUNT_ID',
+        resource_type: 'RESOURCE_TYPE',
+        status: 'RESOURCE_CONFIG',
       },
       ContainerVulnDetails: {
         severity: 'SEVERITY',

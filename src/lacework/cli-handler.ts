@@ -150,51 +150,73 @@ export class LaceworkHandler {
     const startTime = Date.now();
     
     try {
-      // Build the query command
-      let cmd = `${this.cliPath} query run --output json`;
+      // Create a temporary YAML file for the query
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const os = await import('os');
       
-      // Add query
-      cmd += ` --query "${request.query.replace(/"/g, '\\"')}"`;
+      const tempDir = os.tmpdir();
+      const queryId = `temp_query_${Date.now()}`;
+      const tempFile = path.join(tempDir, `${queryId}.yaml`);
       
-      // Add time range if specified
-      if (request.startTime) {
-        cmd += ` --start "${request.startTime}"`;
-      }
+      // Create YAML content for the query
+      const yamlContent = `queryId: ${queryId}\nqueryText: |-\n  ${request.query.split('\n').join('\n  ')}`;
       
-      if (request.endTime) {
-        cmd += ` --end "${request.endTime}"`;
-      }
-
-      console.error(`Executing: ${cmd}`);
-      
-      const { stdout, stderr } = await execAsync(cmd, { timeout: 60000 });
-      
-      if (stderr) {
-        console.error('Query stderr:', stderr);
-      }
-      
-      const executionTime = Date.now() - startTime;
-      
-      let data: any[] = [];
+      // Write the temporary file
+      await fs.writeFile(tempFile, yamlContent);
       
       try {
-        const parsed = JSON.parse(stdout);
-        data = Array.isArray(parsed) ? parsed : [parsed];
-      } catch (parseError) {
-        // If JSON parsing fails, try to extract meaningful data
-        if (stdout.trim()) {
-          data = [{ raw_output: stdout.trim() }];
+        // Build the query command
+        let cmd = `${this.cliPath} query run -f "${tempFile}" --json`;
+        
+        // Add time range if specified
+        if (request.startTime) {
+          cmd += ` --start "${request.startTime}"`;
+        }
+        
+        if (request.endTime) {
+          cmd += ` --end "${request.endTime}"`;
+        }
+
+        console.error(`Executing: ${cmd}`);
+        console.error(`Query YAML content:\n${yamlContent}`);
+        
+        const { stdout, stderr } = await execAsync(cmd, { timeout: 60000 });
+        
+        if (stderr) {
+          console.error('Query stderr:', stderr);
+        }
+        
+        const executionTime = Date.now() - startTime;
+        
+        let data: any[] = [];
+        
+        try {
+          const parsed = JSON.parse(stdout);
+          data = Array.isArray(parsed) ? parsed : [parsed];
+        } catch (parseError) {
+          // If JSON parsing fails, try to extract meaningful data
+          if (stdout.trim()) {
+            data = [{ raw_output: stdout.trim() }];
+          }
+        }
+        
+        return {
+          data,
+          metadata: {
+            executionTime,
+            rowCount: data.length,
+            query: request.query,
+          },
+        };
+      } finally {
+        // Clean up the temporary file
+        try {
+          await fs.unlink(tempFile);
+        } catch (unlinkError) {
+          console.error('Failed to delete temp file:', unlinkError);
         }
       }
-      
-      return {
-        data,
-        metadata: {
-          executionTime,
-          rowCount: data.length,
-          query: request.query,
-        },
-      };
     } catch (error) {
       throw new Error(`Query execution failed: ${error.message}`);
     }
@@ -215,7 +237,7 @@ export class LaceworkHandler {
 
   async getIntegrations(): Promise<any[]> {
     try {
-      const { stdout } = await execAsync(`${this.cliPath} integration list --output json`);
+      const { stdout } = await execAsync(`${this.cliPath} integration list --json`);
       return JSON.parse(stdout) || [];
     } catch (error) {
       console.error('Failed to get integrations:', error.message);
@@ -225,7 +247,7 @@ export class LaceworkHandler {
 
   async getComplianceReports(): Promise<any[]> {
     try {
-      const { stdout } = await execAsync(`${this.cliPath} compliance aws list-accounts --output json`);
+      const { stdout } = await execAsync(`${this.cliPath} compliance aws list-accounts --json`);
       return JSON.parse(stdout) || [];
     } catch (error) {
       console.error('Failed to get compliance reports:', error.message);
