@@ -12,6 +12,8 @@ import { LaceworkHandler } from './lacework/cli-handler.js';
 import { LQLGenerator } from './generators/lql-generator.js';
 import { TemplateManager } from './templates/template-manager.js';
 import { DynamicToolRegistry } from './tools/dynamic-registry.js';
+import { DataSourceExplorer } from './explorers/data-source-explorer.js';
+import { QueryBuilder } from './builders/query-builder.js';
 
 class LaceworkMCPServer {
   private server: Server;
@@ -19,6 +21,8 @@ class LaceworkMCPServer {
   private lqlGenerator: LQLGenerator;
   private templateManager: TemplateManager;
   private toolRegistry: DynamicToolRegistry;
+  private dataSourceExplorer: DataSourceExplorer;
+  private queryBuilder: QueryBuilder;
 
   constructor() {
     console.error('🔧 MCP Server constructor starting...');
@@ -29,8 +33,10 @@ class LaceworkMCPServer {
     });
 
     this.laceworkHandler = new LaceworkHandler();
-    this.lqlGenerator = new LQLGenerator();
+    this.dataSourceExplorer = new DataSourceExplorer(this.laceworkHandler);
+    this.lqlGenerator = new LQLGenerator(this.dataSourceExplorer);
     this.templateManager = new TemplateManager();
+    this.queryBuilder = new QueryBuilder(this.dataSourceExplorer);
     this.toolRegistry = new DynamicToolRegistry(
       this.laceworkHandler,
       this.lqlGenerator,
@@ -146,6 +152,22 @@ class LaceworkMCPServer {
           return await this.executeLQL(args);
         }
 
+        if (name === 'explore-data-sources') {
+          return await this.exploreDataSources(args);
+        }
+
+        if (name === 'describe-data-source') {
+          return await this.describeDataSource(args);
+        }
+
+        if (name === 'discover-fields') {
+          return await this.discoverFields(args);
+        }
+
+        if (name === 'build-targeted-query') {
+          return await this.buildTargetedQuery(args);
+        }
+
         // Try dynamic tools first
         const dynamicResult = await this.toolRegistry.executeTool(name, args);
         if (dynamicResult) {
@@ -245,6 +267,94 @@ class LaceworkMCPServer {
               description: 'Filter templates by category (compliance, threats, inventory, custom)',
             },
           },
+        },
+      },
+      {
+        name: 'explore-data-sources',
+        description: 'Discover and explore available Lacework data sources with filtering',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pattern: {
+              type: 'string',
+              description: 'Search pattern to filter data sources (e.g., "aws", "azure", "container")',
+            },
+            category: {
+              type: 'string',
+              description: 'Filter by category (AWS, Azure, GCP, Containers, Kubernetes, etc.)',
+            },
+            provider: {
+              type: 'string',
+              description: 'Filter by cloud provider (aws, azure, gcp)',
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results to return',
+            },
+          },
+        },
+      },
+      {
+        name: 'describe-data-source',
+        description: 'Get detailed information about a specific data source including available fields',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            dataSource: {
+              type: 'string',
+              description: 'Name of the data source to explore (e.g., "LW_CFG_AWS_EC2_INSTANCES")',
+            },
+          },
+          required: ['dataSource'],
+        },
+      },
+      {
+        name: 'discover-fields',
+        description: 'Find fields containing specific patterns across data sources',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            fieldPattern: {
+              type: 'string',
+              description: 'Pattern to search for in field names (e.g., "region", "severity", "user")',
+            },
+            dataSourcePattern: {
+              type: 'string',
+              description: 'Optional pattern to filter data sources',
+            },
+          },
+          required: ['fieldPattern'],
+        },
+      },
+      {
+        name: 'build-targeted-query',
+        description: 'Build a targeted LQL query using discovered data sources and fields',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            intent: {
+              type: 'string',
+              description: 'Description of what you want to find',
+            },
+            dataSource: {
+              type: 'string',
+              description: 'Specific data source to query (optional, will auto-detect if not provided)',
+            },
+            filters: {
+              type: 'object',
+              description: 'Key-value pairs for filtering (e.g., {"region": "us-east-1", "severity": "high"})',
+            },
+            fields: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Specific fields to return (optional, will auto-select if not provided)',
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results',
+            },
+          },
+          required: ['intent'],
         },
       },
     ];
@@ -374,6 +484,173 @@ class LaceworkMCPServer {
           {
             type: 'text',
             text: `Template Listing Error: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async exploreDataSources(args: any) {
+    try {
+      console.error(`🔍 Exploring data sources with pattern: ${args.pattern || 'all'}`);
+      
+      const dataSources = await this.dataSourceExplorer.discoverDataSources({
+        pattern: args.pattern,
+        category: args.category,
+        provider: args.provider,
+        limit: args.limit
+      });
+
+      const summary = dataSources.map(ds => `• ${ds.name} (${ds.category}): ${ds.description}`).join('\n');
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Discovered ${dataSources.length} data sources:\n\n${summary}\n\nDetailed information:\n${JSON.stringify(dataSources, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Data Source Exploration Error: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async describeDataSource(args: any) {
+    try {
+      console.error(`🔬 Describing data source: ${args.dataSource}`);
+      
+      const sourceInfo = await this.dataSourceExplorer.exploreDataSource(args.dataSource);
+      
+      if (!sourceInfo) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Data source '${args.dataSource}' not found or not accessible.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const fieldSummary = sourceInfo.fields?.map(f => 
+        `• ${f.name} (${f.type}): ${f.description || 'No description'}`
+      ).join('\n') || 'No field information available';
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Data Source: ${sourceInfo.name}\nCategory: ${sourceInfo.category}\nDescription: ${sourceInfo.description}\n\nFields (${sourceInfo.fields?.length || 0}):\n${fieldSummary}\n\nFull details:\n${JSON.stringify(sourceInfo, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Data Source Description Error: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async discoverFields(args: any) {
+    try {
+      console.error(`🔍 Discovering fields with pattern: ${args.fieldPattern}`);
+      
+      const results = await this.dataSourceExplorer.findFieldsContaining(
+        args.fieldPattern,
+        args.dataSourcePattern
+      );
+
+      if (results.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `No fields found matching pattern '${args.fieldPattern}'`,
+            },
+          ],
+        };
+      }
+
+      const summary = results.map(r => 
+        `${r.source}:\n${r.fields.map(f => `  • ${f.name} (${f.type}): ${f.description || 'No description'}`).join('\n')}`
+      ).join('\n\n');
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Found fields matching '${args.fieldPattern}' across ${results.length} data sources:\n\n${summary}\n\nFull details:\n${JSON.stringify(results, null, 2)}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Field Discovery Error: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+
+  private async buildTargetedQuery(args: any) {
+    try {
+      console.error(`🎯 Building targeted query: ${args.intent}`);
+      
+      const queryResult = await this.queryBuilder.buildTargetedQuery({
+        intent: args.intent,
+        dataSource: args.dataSource,
+        filters: args.filters,
+        fields: args.fields,
+        limit: args.limit
+      });
+
+      // Execute the query if it was built successfully
+      let executionResult = null;
+      try {
+        executionResult = await this.laceworkHandler.executeQuery({
+          query: queryResult.query,
+          startTime: queryResult.timeRange?.start,
+          endTime: queryResult.timeRange?.end
+        });
+      } catch (execError) {
+        console.error('Query execution failed:', execError.message);
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Targeted Query Built:\nIntent: ${args.intent}\nGenerated LQL:\n${queryResult.query}\n\nQuery Details:\n${JSON.stringify(queryResult, null, 2)}${executionResult ? `\n\nExecution Results:\n${JSON.stringify(executionResult, null, 2)}` : ''}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Targeted Query Building Error: ${error.message}`,
           },
         ],
         isError: true,

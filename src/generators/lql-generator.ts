@@ -23,8 +23,10 @@ export class LQLGenerator {
     pattern: RegExp;
     generator: (match: RegExpMatchArray, query: string) => Partial<LQLQueryResult>;
   }> = [];
+  private dataSourceExplorer?: any; // Will be injected for dynamic discovery
 
-  constructor() {
+  constructor(dataSourceExplorer?: any) {
+    this.dataSourceExplorer = dataSourceExplorer;
     this.initializeDataSources();
     this.initializeQueryPatterns();
   }
@@ -156,7 +158,7 @@ export class LQLGenerator {
     console.error(`🔍 Analyzing query: "${naturalQuery}"`);
 
     // Step 1: Determine data source
-    const dataSource = this.identifyDataSource(lowerQuery);
+    const dataSource = await this.identifyDataSource(lowerQuery);
     console.error(`📊 Identified data source: ${dataSource?.lqlSource || 'CloudTrailRawEvents'}`);
 
     // Step 2: Match against query patterns
@@ -168,7 +170,7 @@ export class LQLGenerator {
     console.error(`🔧 Extracted filters:`, filters);
 
     // Step 4: Build the LQL query
-    const lqlQuery = this.buildLQLQuery(dataSource, pattern, filters, naturalQuery);
+    const lqlQuery = await this.buildLQLQuery(dataSource, pattern, filters, naturalQuery);
     
     return {
       query: lqlQuery,
@@ -180,7 +182,8 @@ export class LQLGenerator {
     };
   }
 
-  private identifyDataSource(query: string): DataSourceMapping | null {
+  private async identifyDataSource(query: string): Promise<DataSourceMapping | null> {
+    // First try static mappings for fast lookup
     for (const [key, mapping] of this.dataSources.entries()) {
       for (const keyword of mapping.keywords) {
         if (query.includes(keyword)) {
@@ -188,6 +191,25 @@ export class LQLGenerator {
         }
       }
     }
+
+    // If no static match and explorer available, try dynamic discovery
+    if (this.dataSourceExplorer) {
+      try {
+        const discoveredSources = await this.dataSourceExplorer.searchDataSources(query);
+        if (discoveredSources.length > 0) {
+          const source = discoveredSources[0];
+          return {
+            keywords: [source.name.toLowerCase()],
+            lqlSource: source.name,
+            commonFields: source.fields?.map(f => f.name) || [],
+            description: source.description
+          };
+        }
+      } catch (error) {
+        console.error('Dynamic data source discovery failed:', error.message);
+      }
+    }
+    
     return null;
   }
 
@@ -280,12 +302,12 @@ export class LQLGenerator {
     };
   }
 
-  private buildLQLQuery(
+  private async buildLQLQuery(
     dataSource: DataSourceMapping | null,
     pattern: Partial<LQLQueryResult> | null,
     filters: Record<string, any>,
     originalQuery: string
-  ): string {
+  ): Promise<string> {
     // Choose the data source
     const source = dataSource?.lqlSource || this.inferDataSourceFromQuery(originalQuery);
     
@@ -296,26 +318,28 @@ export class LQLGenerator {
     const filterConditions: string[] = [];
     
     // Add filter conditions
-    Object.entries(filters).forEach(([key, value]) => {
+    for (const [key, value] of Object.entries(filters)) {
       if (value !== undefined && value !== null) {
+        const fieldName = await this.mapFieldName(key, source);
+        
         if (typeof value === 'string' && (value.startsWith('>=') || value.startsWith('<='))) {
           // Handle comparison operators
           const operator = value.substring(0, 2);
           const numValue = value.substring(2).trim();
-          filterConditions.push(`${this.mapFieldName(key, source)} ${operator} ${numValue}`);
+          filterConditions.push(`${fieldName} ${operator} ${numValue}`);
         } else if (value === 'true' || value === 'false') {
           // Handle boolean values
-          filterConditions.push(`${this.mapFieldName(key, source)} = ${value}`);
+          filterConditions.push(`${fieldName} = ${value}`);
         } else if (value.includes(',')) {
           // Handle multiple values - LQL uses OR syntax
-          const values = value.split(',').map((v: string) => `${this.mapFieldName(key, source)} = '${v.trim()}'`).join(' or ');
+          const values = value.split(',').map((v: string) => `${fieldName} = '${v.trim()}'`).join(' or ');
           filterConditions.push(`(${values})`);
         } else {
           // Handle single string values
-          filterConditions.push(`${this.mapFieldName(key, source)} = '${value}'`);
+          filterConditions.push(`${fieldName} = '${value}'`);
         }
       }
-    });
+    }
 
     // Add query-specific conditions based on keywords
     if (originalQuery.toLowerCase().includes('fail') || originalQuery.toLowerCase().includes('failed')) {
@@ -442,8 +466,31 @@ export class LQLGenerator {
     return 'CloudTrailRawEvents';
   }
 
-  private mapFieldName(filterKey: string, dataSource: string): string {
-    // Map common filter keys to actual LQL field names based on data source
+  private async mapFieldName(filterKey: string, dataSource: string): Promise<string> {
+    // First try dynamic field discovery if explorer is available
+    if (this.dataSourceExplorer) {
+      try {
+        const sourceInfo = await this.dataSourceExplorer.exploreDataSource(dataSource);
+        if (sourceInfo?.fields) {
+          // Look for exact match first
+          const exactMatch = sourceInfo.fields.find(f => 
+            f.name.toLowerCase() === filterKey.toLowerCase()
+          );
+          if (exactMatch) return exactMatch.name;
+
+          // Look for partial match
+          const partialMatch = sourceInfo.fields.find(f => 
+            f.name.toLowerCase().includes(filterKey.toLowerCase()) ||
+            (f.description && f.description.toLowerCase().includes(filterKey.toLowerCase()))
+          );
+          if (partialMatch) return partialMatch.name;
+        }
+      } catch (error) {
+        console.error('Dynamic field mapping failed:', error.message);
+      }
+    }
+
+    // Fall back to static mappings
     const fieldMappings: Record<string, Record<string, string>> = {
       CloudTrailRawEvents: {
         resource_type: 'EVENT_NAME',
