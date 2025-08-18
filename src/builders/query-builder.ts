@@ -78,7 +78,10 @@ export class QueryBuilder {
       category: this.categorizeQuery(request.intent, sourceInfo.category),
       suggestedName: this.generateQueryName(request.intent, dataSource),
       parameters: request.filters || {},
-      timeRange: request.timeRange,
+      timeRange: request.timeRange && request.timeRange.start && request.timeRange.end ? {
+        start: request.timeRange.start,
+        end: request.timeRange.end
+      } : undefined,
       confidence: 0.9
     };
   }
